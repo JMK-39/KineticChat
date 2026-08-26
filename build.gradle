@@ -1,0 +1,301 @@
+import java.text.SimpleDateFormat
+import org.gradle.api.GradleException
+
+buildscript {
+    repositories {
+        maven { url = 'https://litesy.bmclapi2.bangbang93.com/maven/' }
+        maven { url = 'https://maven.aliyun.com/repository/public/' }
+        maven { url = 'https://maven.minecraftforge.net/' }
+        maven { url = 'https://repo.spongepowered.org/repository/maven-public/' }
+        mavenCentral()
+    }
+    dependencies {
+        classpath group: 'net.minecraftforge.gradle', name: 'ForgeGradle', version: '6.0.24'
+        classpath 'org.spongepowered:mixingradle:0.7-SNAPSHOT'
+    }
+}
+
+plugins {
+    id 'eclipse'
+    id 'idea'
+    id 'maven-publish'
+}
+
+apply plugin: 'net.minecraftforge.gradle'
+apply plugin: 'org.spongepowered.mixin'
+
+configurations.configureEach {
+    resolutionStrategy.cacheDynamicVersionsFor 99999, 'days'
+    resolutionStrategy.cacheChangingModulesFor 99999, 'days'
+}
+
+def getDynamicVersion() {
+    def useAuto = project.findProperty('use_auto_version')?.toString() ?: 'false'
+    if (useAuto.toBoolean()) {
+        return new SimpleDateFormat('yy.M.d').format(new Date())
+    }
+    return project.findProperty('mod_version')?.toString() ?: '0.0.0'
+}
+
+def pVersion = getDynamicVersion()
+def pGroup = project.findProperty('mod_group_id')?.toString() ?: 'dev.xyat.kineticchat'
+def pModId = project.findProperty('mod_id')?.toString() ?: 'kineticchat'
+def mixinConfigName = "${pModId}.mixins.json"
+def mixinRefmapName = "${pModId}.mixins.refmap.json"
+def generatedMixinResourcesDir = layout.buildDirectory.dir('generated/mixinResources')
+
+version = pVersion
+group = pGroup
+
+base {
+    archivesName.set(pModId)
+}
+
+java.toolchain.languageVersion = JavaLanguageVersion.of(17)
+
+minecraft {
+    mappings channel: project.findProperty('mapping_channel')?.toString() ?: 'official', version: project.findProperty('mapping_version')?.toString()
+    copyIdeResources = true
+
+    runs {
+        configureEach {
+            workingDirectory project.file('run')
+            property 'forge.logging.markers', 'REGISTRIES'
+            property 'forge.logging.console.level', 'debug'
+            property 'mixin.env.remapRefMap', 'true'
+            property 'mixin.env.refMapRemappingFile', "${projectDir}/build/createSrgToMcp/output.srg"
+
+            mods {
+                "${pModId}" {
+                    source sourceSets.main
+                }
+            }
+        }
+
+        client {
+            property 'forge.enabledGameTestNamespaces', pModId
+        }
+
+        server {
+            property 'forge.enabledGameTestNamespaces', pModId
+            args '--nogui'
+        }
+    }
+}
+
+mixin {
+    add sourceSets.main, mixinRefmapName
+    config mixinConfigName
+    defaultObfuscationEnv 'searge'
+}
+
+sourceSets.main.resources {
+    srcDir 'src/generated/resources'
+}
+
+repositories {
+    maven { url = 'https://litesy.bmclapi2.bangbang93.com/maven/' }
+    maven { url = 'https://maven.aliyun.com/repository/public/' }
+    maven { url = 'https://maven.minecraftforge.net/' }
+    maven { url = 'https://repo.spongepowered.org/repository/maven-public/' }
+    maven { url = 'https://maven.blamejared.com' }
+    mavenCentral()
+
+    flatDir {
+        dir project.findProperty('local_libs_dir') ?: 'libs'
+    }
+}
+
+def localMod = { String artifactName ->
+    File libsDir = file(project.findProperty('local_libs_dir') ?: 'libs')
+    if (!libsDir.exists() || !libsDir.isDirectory()) {
+        throw new GradleException("Local libs directory does not exist: ${libsDir.absolutePath}")
+    }
+
+    File[] jars = libsDir.listFiles()
+    if (jars == null) {
+        throw new GradleException("Cannot read local libs directory: ${libsDir.absolutePath}")
+    }
+
+    String exactName = "${artifactName}.jar"
+    String versionPrefix = "${artifactName}-"
+
+    File exactMatch = jars.find { File candidate ->
+        candidate.isFile() && candidate.name.equalsIgnoreCase(exactName)
+    }
+    if (exactMatch != null) {
+        return "blank:${artifactName}:local"
+    }
+
+    def matches = jars.findAll { File candidate ->
+        candidate.isFile()
+                && candidate.name.toLowerCase().endsWith('.jar')
+                && candidate.name.regionMatches(true, 0, versionPrefix, 0, versionPrefix.length())
+    }.sort { File a, File b -> a.name <=> b.name }
+
+    if (matches.isEmpty()) {
+        throw new GradleException("Cannot find local mod '${artifactName}' in ${libsDir.absolutePath}")
+    }
+    if (matches.size() > 1) {
+        throw new GradleException("Multiple local mod files found for '${artifactName}': ${matches.collect { it.name }.join(', ')}")
+    }
+
+    File selected = matches[0]
+    String detectedVersion = selected.name.substring(versionPrefix.length(), selected.name.length() - 4)
+    if (detectedVersion.isBlank()) {
+        throw new GradleException("Cannot determine local mod version from ${selected.name}")
+    }
+
+    return "blank:${artifactName}:${detectedVersion}"
+}
+
+dependencies {
+    minecraft "net.minecraftforge:forge:${project.findProperty('minecraft_version')?.toString()}-${project.findProperty('forge_version')?.toString()}"
+    annotationProcessor 'org.spongepowered:mixin:0.8.5:processor'
+    implementation fg.deobf(localMod('kineticcore'))
+}
+
+tasks.named('processResources', ProcessResources).configure {
+    def replaceProperties = [
+            minecraft_version         : project.findProperty('minecraft_version')?.toString(),
+            minecraft_version_range   : project.findProperty('minecraft_version_range')?.toString(),
+            forge_version             : project.findProperty('forge_version')?.toString(),
+            forge_version_range       : project.findProperty('forge_version_range')?.toString(),
+            loader_version_range      : project.findProperty('loader_version_range')?.toString(),
+            kineticcore_version_range : project.findProperty('kineticcore_version_range')?.toString(),
+            mod_id                    : pModId,
+            mod_name                  : project.findProperty('mod_name')?.toString(),
+            mod_license               : project.findProperty('mod_license')?.toString(),
+            mod_version               : pVersion,
+            mod_authors               : project.findProperty('mod_authors')?.toString(),
+            mod_description           : project.findProperty('mod_description')?.toString()
+    ]
+
+    inputs.properties replaceProperties
+
+    filesMatching(['META-INF/mods.toml', 'pack.mcmeta']) {
+        expand replaceProperties + [
+                project: project,
+                file   : [jarVersion: pVersion]
+        ]
+    }
+}
+
+tasks.named('jar', Jar).configure {
+    dependsOn tasks.named('compileJava')
+    duplicatesStrategy = org.gradle.api.file.DuplicatesStrategy.EXCLUDE
+
+    from(generatedMixinResourcesDir) {
+        include mixinRefmapName
+        into ''
+    }
+
+    def customOutputDir = project.findProperty('output_mods_dir')
+    if (customOutputDir) {
+        destinationDirectory = file(customOutputDir)
+    }
+    archiveFileName.set("${pModId}.jar")
+
+    manifest {
+        attributes([
+                'Specification-Title'     : pModId,
+                'Specification-Vendor'    : project.findProperty('mod_authors')?.toString() ?: 'Unknown',
+                'Specification-Version'   : '1',
+                'Implementation-Title'    : project.name,
+                'Implementation-Version'  : pVersion,
+                'Implementation-Vendor'   : project.findProperty('mod_authors')?.toString() ?: 'Unknown',
+                'Implementation-Timestamp': new Date().format("yyyy-MM-dd'T'HH:mm:ssZ"),
+                'MixinConfigs'            : mixinConfigName
+        ])
+    }
+    finalizedBy 'reobfJar'
+}
+
+tasks.register('runClientIDE') {
+    group = 'build'
+    description = 'Start Forge development client (wrapper around runClient)'
+    dependsOn 'runClient'
+}
+
+tasks.register('runServerIDE') {
+    group = 'build'
+    description = 'Start Forge development server (wrapper around runServer)'
+    dependsOn 'runServer'
+}
+
+tasks.withType(JavaCompile).configureEach {
+    options.encoding = 'UTF-8'
+    options.compilerArgs.addAll([
+            '-nowarn',
+            '-Xlint:none',
+            '-Amixin.target.allowUnresolvedTarget=true',
+            '-Amixin.suppressTargetWarnings=true'
+    ])
+}
+
+tasks.named('compileJava', JavaCompile).configure {
+    options.incremental = false
+    outputs.upToDateWhen { false }
+
+    doFirst {
+        File stableRefmap = new File(generatedMixinResourcesDir.get().asFile, mixinRefmapName)
+        if (stableRefmap.exists() && !stableRefmap.delete()) {
+            throw new GradleException("Cannot delete stale Mixin refmap: ${stableRefmap.absolutePath}")
+        }
+    }
+
+    doLast {
+        def extra = extensions.extraProperties
+        if (!extra.has('refMapFile')) {
+            throw new GradleException("MixinGradle did not configure refMapFile for compileJava")
+        }
+
+        File generatedRefmap = extra.get('refMapFile') as File
+        if (!generatedRefmap.isFile()) {
+            throw new GradleException("Mixin annotation processor did not generate refmap: ${generatedRefmap.absolutePath}")
+        }
+
+        File targetDir = generatedMixinResourcesDir.get().asFile
+        targetDir.mkdirs()
+        File stableRefmap = new File(targetDir, mixinRefmapName)
+        java.nio.file.Files.copy(
+                generatedRefmap.toPath(),
+                stableRefmap.toPath(),
+                java.nio.file.StandardCopyOption.REPLACE_EXISTING
+        )
+
+        if (!stableRefmap.isFile()) {
+            throw new GradleException("Failed to stage generated Mixin refmap: ${stableRefmap.absolutePath}")
+        }
+    }
+}
+
+tasks.named('jar', Jar).configure {
+    doLast {
+        File builtJar = archiveFile.get().asFile
+        if (!builtJar.isFile()) {
+            throw new GradleException("Built jar does not exist: ${builtJar.absolutePath}")
+        }
+
+        def expectedConfigs = fileTree(dir: 'src/main/resources', include: "${pModId}.mixins*.json")
+                .files
+                .collect { File file -> file.name }
+                .sort()
+        if (expectedConfigs.isEmpty()) {
+            throw new GradleException("No Mixin config exists in src/main/resources for ${pModId}")
+        }
+
+        def entries = zipTree(builtJar)
+        expectedConfigs.each { String configName ->
+            if (entries.matching { include configName }.files.isEmpty()) {
+                throw new GradleException("Built jar is missing Mixin config: ${configName}")
+            }
+        }
+
+        String refmapName = "${pModId}.mixins.refmap.json"
+        if (entries.matching { include refmapName }.files.isEmpty()) {
+            throw new GradleException("Built jar is missing generated Mixin refmap: ${refmapName}")
+        }
+    }
+}
+

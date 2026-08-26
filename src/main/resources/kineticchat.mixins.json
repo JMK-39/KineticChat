@@ -1,0 +1,24 @@
+{
+  "minVersion": "0.8",
+  "package": "dev.xyat.kineticchat.chat.mixin",
+  "compatibilityLevel": "JAVA_17",
+  "refmap": "kineticchat.mixins.refmap.json",
+  "mixins": [
+    "ChatServerMixins$PacketLengthTweaks",
+    "ChatServerMixins$PlayerListTweaks",
+    "ChatServerMixins$ServerPacketTweaks",
+    "ChatServerMixins$StringUtilTweaks"
+  ],
+  "client": [
+    "client.ChatClientMixins$ChatComponentTweaks",
+    "client.ChatClientMixins$ChatScreenTweaks",
+    "client.ChatClientMixins$ClientPacketTweaks",
+    "client.ChatClientMixins$EditBoxTweaks",
+    "client.ChatClientMixins$ReportingContextTweaks",
+    "client.ChatClientMixins$ReportScreenTweaks",
+    "client.ChatClientMixins$SocialInteractionsTweaks",
+    "client.ChatComponentAccessor",
+    "client.ChatCopyMixins",
+    "client.ChatSecurityClientMixin"
+  ]
+}

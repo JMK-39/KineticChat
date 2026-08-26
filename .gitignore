@@ -1,0 +1,29 @@
+# Gradle
+.gradle/
+build/
+
+# IntelliJ IDEA
+.idea/
+out/
+*.iml
+*.ipr
+*.iws
+
+# Eclipse
+bin/
+.settings/
+.metadata/
+.classpath
+.project
+*.launch
+
+# Forge development runs
+run/
+eclipse/
+
+# Generated data cache
+src/generated/resources/.cache/
+
+# Local operating-system files
+.DS_Store
+Thumbs.db

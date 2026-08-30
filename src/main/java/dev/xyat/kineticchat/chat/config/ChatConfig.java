@@ -26,7 +26,19 @@ public class ChatConfig {
             setupConfig();
             readValues();
             save();
-        } catch (Exception e) { KineticChat.LOGGER.error("ChatConfig Load Failed", e); }
+        } catch (Exception e) {
+            discardBrokenConfig();
+            KineticChat.LOGGER.error("ChatConfig Load Failed", e);
+        }
+    }
+
+    private static void discardBrokenConfig() {
+        if (configData == null) return;
+        try {
+            configData.close();
+        } catch (Throwable ignored) {
+        }
+        configData = null;
     }
 
     private static void setupConfig() {
@@ -107,7 +119,9 @@ public class ChatConfig {
     }
 
     public static void saveServerSettings() {
-        if (configData == null) return;
+        if (configData == null) {
+            throw new IllegalStateException("Chat server config is not loaded");
+        }
         maxChatLength = ChatSyncCodec.clampChatLength(maxChatLength);
         maxChatHistoryLines = ChatSyncCodec.clampHistoryLines(maxChatHistoryLines);
         configData.set("max_chat_length", maxChatLength);
